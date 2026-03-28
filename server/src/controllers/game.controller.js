@@ -4,6 +4,8 @@ import {
   updateGame,
 } from "../services/game.service.js";
 
+import { generateAIResponse } from "../services/ai.service.js";
+
 
 
 // Start a new negotiation game
@@ -34,13 +36,24 @@ export const negotiate = async (req, res) => {
 
     const game = getGame(gameId);
 
-    // Check if game exists
+
+    // Validate game existence
     if (!game) {
       return res.status(404).json({
         success: false,
         message: "Game not found",
       });
     }
+
+
+    // Ensure the game belongs to the logged-in user
+    if (game.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access to this game",
+      });
+    }
+
 
     // Ensure game is still active
     if (game.status !== "ongoing") {
@@ -50,27 +63,30 @@ export const negotiate = async (req, res) => {
       });
     }
 
+
+    // Validate offer
+    if (!offer || isNaN(offer)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid offer amount is required",
+      });
+    }
+
+
     let decision = "counter";
-    let aiMessage = "";
 
 
-    // If offer is equal or higher than current price → accept
+    // Core negotiation logic (backend is authority)
     if (offer >= game.currentPrice) {
       decision = "accept";
       game.status = "accepted";
       game.currentPrice = offer;
-
-      aiMessage = "Deal accepted.";
-
     }
 
-    // If offer is below minimum threshold → reject strongly
     else if (offer < game.minPrice) {
-      aiMessage = "This offer is too low. I cannot accept it.";
-
+      decision = "reject";
     }
 
-    // Otherwise → counter offer based on personality
     else {
       const reduction =
         game.personality === "desperate" ? 800 : 400;
@@ -79,19 +95,27 @@ export const negotiate = async (req, res) => {
         game.minPrice,
         game.currentPrice - reduction
       );
-
-      aiMessage = `I can offer it for ₹${game.currentPrice}`;
     }
+
+
+    // Generate human-like AI response
+    const aiMessage = await generateAIResponse({
+      personality: game.personality,
+      currentPrice: game.currentPrice,
+      minPrice: game.minPrice,
+      userOffer: offer,
+      userMessage: message,
+      decision,
+    });
 
 
     // Move to next round
     game.round += 1;
 
 
-    // End game if max rounds reached without agreement
+    // End game if max rounds reached
     if (game.round > game.maxRounds && game.status === "ongoing") {
       game.status = "ended";
-      aiMessage = "Negotiation ended. No agreement reached.";
     }
 
 
@@ -100,7 +124,7 @@ export const negotiate = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Negotiation updated",
+      message: "Negotiation updated successfully",
       data: {
         decision,
         aiMessage,

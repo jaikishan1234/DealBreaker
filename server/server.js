@@ -1,8 +1,7 @@
+// server.js
+import "dotenv/config"; // ← hoisted import that loads env vars first
 import app from "./src/app.js";
-import dotenv from "dotenv";
 import connectDB from "./src/config/db.js";
-
-dotenv.config();
 
 connectDB();
 
