@@ -66,11 +66,13 @@ export const negotiate = async (req, res) => {
     }
 
 
-    // Validate offer input
-    if (!offer || isNaN(offer)) {
+    // Convert and validate offer safely
+    const numericOffer = Number(offer);
+
+    if (!Number.isFinite(numericOffer) || numericOffer <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Valid offer amount is required",
+        message: "Offer must be a valid positive number",
       });
     }
 
@@ -78,14 +80,14 @@ export const negotiate = async (req, res) => {
     let decision = "counter";
 
 
-    // Backend controls negotiation logic
-    if (offer >= game.currentPrice) {
+    // Backend controls negotiation logic (AI does NOT decide price)
+    if (numericOffer >= game.currentPrice) {
       decision = "accept";
       game.status = "accepted";
-      game.currentPrice = offer;
+      game.currentPrice = numericOffer;
     }
 
-    else if (offer < game.minPrice) {
+    else if (numericOffer < game.minPrice) {
       decision = "reject";
     }
 
@@ -101,15 +103,16 @@ export const negotiate = async (req, res) => {
     }
 
 
-    // Generate AI message based on decision + state
-    const aiMessage = await generateAIResponse({
-      personality: game.personality,
-      currentPrice: game.currentPrice,
-      minPrice: game.minPrice,
-      userOffer: offer,
-      userMessage: message,
-      decision,
-    });
+    // Generate AI message based on decision and current state
+    const aiMessage =
+      (await generateAIResponse({
+        personality: game.personality,
+        currentPrice: game.currentPrice,
+        minPrice: game.minPrice,
+        userOffer: numericOffer,
+        userMessage: message,
+        decision,
+      })) || "Processing your offer...";
 
 
     // Move to next round
@@ -122,22 +125,17 @@ export const negotiate = async (req, res) => {
     }
 
 
-    // Save updated game state
-    updateGame(gameId, game);
-
-
-    // Automatically save score when game finishes
-    if (game.status === "accepted" || game.status === "ended") {
-
-      // Calculate score based on negotiation performance
+    // Save score ONLY once when game finishes
+    if (
+      (game.status === "accepted" || game.status === "ended") &&
+      !game.scoreSaved
+    ) {
       const score =
         (game.initialPrice - game.currentPrice) /
         game.initialPrice;
 
-
-      // Remove old scores for this user to avoid duplicates
+      // Remove old scores for this user (one score per user)
       await Score.deleteMany({ user: req.user._id });
-
 
       // Save new score
       await Score.create({
@@ -147,7 +145,14 @@ export const negotiate = async (req, res) => {
         initialPrice: game.initialPrice,
         score,
       });
+
+      // Mark as saved to prevent duplicates
+      game.scoreSaved = true;
     }
+
+
+    // Update game AFTER all modifications
+    updateGame(gameId, game);
 
 
     return res.status(200).json({
