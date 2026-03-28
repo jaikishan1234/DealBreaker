@@ -5,12 +5,14 @@ import {
 } from "../services/game.service.js";
 
 import { generateAIResponse } from "../services/ai.service.js";
+import Score from "../models/score.model.js";
 
 
 
 // Start a new negotiation game
 export const startGame = async (req, res) => {
   try {
+    // Create a new game for the logged-in user
     const game = createGame(req.user._id);
 
     return res.status(201).json({
@@ -37,7 +39,7 @@ export const negotiate = async (req, res) => {
     const game = getGame(gameId);
 
 
-    // Validate game existence
+    // Ensure game exists
     if (!game) {
       return res.status(404).json({
         success: false,
@@ -64,7 +66,7 @@ export const negotiate = async (req, res) => {
     }
 
 
-    // Validate offer
+    // Validate offer input
     if (!offer || isNaN(offer)) {
       return res.status(400).json({
         success: false,
@@ -76,7 +78,7 @@ export const negotiate = async (req, res) => {
     let decision = "counter";
 
 
-    // Core negotiation logic (backend is authority)
+    // Backend controls negotiation logic
     if (offer >= game.currentPrice) {
       decision = "accept";
       game.status = "accepted";
@@ -88,6 +90,7 @@ export const negotiate = async (req, res) => {
     }
 
     else {
+      // Reduce price based on seller personality
       const reduction =
         game.personality === "desperate" ? 800 : 400;
 
@@ -98,7 +101,7 @@ export const negotiate = async (req, res) => {
     }
 
 
-    // Generate human-like AI response
+    // Generate AI message based on decision + state
     const aiMessage = await generateAIResponse({
       personality: game.personality,
       currentPrice: game.currentPrice,
@@ -119,7 +122,32 @@ export const negotiate = async (req, res) => {
     }
 
 
+    // Save updated game state
     updateGame(gameId, game);
+
+
+    // Automatically save score when game finishes
+    if (game.status === "accepted" || game.status === "ended") {
+
+      // Calculate score based on negotiation performance
+      const score =
+        (game.initialPrice - game.currentPrice) /
+        game.initialPrice;
+
+
+      // Remove old scores for this user to avoid duplicates
+      await Score.deleteMany({ user: req.user._id });
+
+
+      // Save new score
+      await Score.create({
+        user: req.user._id,
+        username: req.user.username,
+        finalPrice: game.currentPrice,
+        initialPrice: game.initialPrice,
+        score,
+      });
+    }
 
 
     return res.status(200).json({
