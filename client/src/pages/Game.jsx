@@ -1,4 +1,13 @@
 import { useEffect, useState, useRef } from "react";
+import { 
+  TrendingDown, 
+  Clock, 
+  Activity, 
+  Send, 
+  Trophy, 
+  MessageSquare, 
+  AlertCircle 
+} from "lucide-react";
 import axios from "axios";
 
 function Game() {
@@ -6,186 +15,127 @@ function Game() {
   const [offer, setOffer] = useState("");
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const chatRef = useRef();
-
   const token = localStorage.getItem("token");
 
-
-  // Start game on load
   useEffect(() => {
     const startGame = async () => {
       try {
         const res = await axios.post(
           "http://localhost:5000/api/game/start",
           {},
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
+          { headers: { Authorization: `Bearer ${token}` } }
         );
-
         const gameData = res.data.data;
-
         setGame(gameData);
-
-        // Initial AI message
-        setChat([
-          {
-            sender: "ai",
-            text: `Starting price is ₹${gameData.currentPrice}`,
-          },
-        ]);
-
+        setChat([{ sender: "ai", text: `Welcome! Starting price is ₹${gameData.currentPrice}.` }]);
       } catch (err) {
-        alert("Failed to start game");
+        window.location.href = "/";
       }
     };
-
     startGame();
-  }, []);
+  }, [token]);
 
-
-  // Auto-scroll chat when new message comes
   useEffect(() => {
-    chatRef.current?.scrollTo({
-      top: chatRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chat]);
 
-
-  // Send offer to backend
-  const handleSend = async () => {
+  const handleSend = async (e) => {
+    e.preventDefault();
+    setLoading(true);
     try {
       const res = await axios.post(
         "http://localhost:5000/api/game/negotiate",
-        {
-          gameId: game.gameId,
-          offer: Number(offer),
-          message,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { gameId: game.gameId, offer: Number(offer), message },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-
       const data = res.data.data;
-
-      // Add user + AI messages
       setChat((prev) => [
         ...prev,
-        { sender: "user", text: `₹${offer} - ${message}` },
+        { sender: "user", text: `₹${offer} | ${message}` },
         { sender: "ai", text: data.aiMessage },
       ]);
-
-      // Clear inputs
       setOffer("");
       setMessage("");
-
-      // Update game state
-      setGame((prev) => ({
-        ...prev,
-        currentPrice: data.currentPrice,
-        round: data.round,
-        status: data.status,
-      }));
-
+      setGame((prev) => ({ ...prev, currentPrice: data.currentPrice, round: data.round, status: data.status }));
     } catch (err) {
-      alert(err.response?.data?.message || "Error");
+      alert("Error sending offer");
+    } finally {
+      setLoading(false);
     }
   };
 
-
-  if (!game) return <p>Loading game...</p>;
-
+  if (!game) return <div className="auth-page"><Activity className="spinning" /></div>;
 
   return (
-    <div style={{ padding: "20px", maxWidth: "600px", margin: "auto" }}>
-      <h2>Negotiation Game</h2>
-
-      <p><b>Current Price:</b> ₹{game.currentPrice}</p>
-      <p><b>Round:</b> {game.round}</p>
-      <p><b>Status:</b> {game.status}</p>
-
-
-      {/* Chat Box */}
-      <div
-        ref={chatRef}
-        style={{
-          border: "1px solid #ccc",
-          padding: "10px",
-          height: "300px",
-          overflowY: "scroll",
-          marginBottom: "10px",
-          borderRadius: "10px",
-        }}
-      >
-        {chat.map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              textAlign: msg.sender === "user" ? "right" : "left",
-              margin: "5px 0",
-            }}
-          >
-            <span
-              style={{
-                background: msg.sender === "user" ? "#4caf50" : "#333",
-                color: "#fff",
-                padding: "8px 12px",
-                borderRadius: "12px",
-                display: "inline-block",
-                maxWidth: "70%",
-              }}
-            >
-              {msg.text}
-            </span>
+    <div className="game-page">
+      <div className="game-container">
+        
+        {/* Stats Bar with Lucide Icons */}
+        <div className="game-stats">
+          <div className="stat-card">
+            <span className="label"><TrendingDown size={14} /> Current Price</span>
+            <span className="value">₹{game.currentPrice}</span>
           </div>
-        ))}
-      </div>
+          <div className="stat-card">
+            <span className="label"><Clock size={14} /> Round</span>
+            <span className="value">{game.round}/5</span>
+          </div>
+          <div className="stat-card">
+            <span className="label"><Activity size={14} /> Status</span>
+            <span className={`status-badge ${game.status}`}>{game.status}</span>
+          </div>
+        </div>
 
+        {/* Chat Window */}
+        <div className="chat-window" ref={chatRef}>
+          {chat.map((msg, i) => (
+            <div key={i} className={`chat-bubble-container ${msg.sender}`}>
+              <div className="chat-bubble">
+                {msg.sender === 'ai' && <MessageSquare size={12} style={{marginRight: '8px'}} />}
+                {msg.text}
+              </div>
+            </div>
+          ))}
+        </div>
 
-      {/* Inputs */}
-      {game.status === "ongoing" && (
-        <div style={{ display: "flex", gap: "10px" }}>
-          <input
-            placeholder="Your offer"
-            value={offer}
-            onChange={(e) => setOffer(e.target.value)}
-            style={{ flex: 1 }}
-          />
+        {/* Action Area */}
+        <div className="game-actions">
+          {game.status === "ongoing" ? (
+            <form onSubmit={handleSend} className="input-group">
+              <input
+                className="game-input offer-input"
+                type="number"
+                placeholder="Offer"
+                value={offer}
+                onChange={(e) => setOffer(e.target.value)}
+                required
+              />
+              <input
+                className="game-input msg-input"
+                placeholder="Message AI..."
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+              />
+              <button type="submit" className="btn-success send-btn" disabled={loading}>
+                <Send size={18} />
+              </button>
+            </form>
+          ) : (
+            <div className="game-over-area">
+              <AlertCircle color="#ef4444" size={32} />
+              <h3>Negotiation Ended</h3>
+              <p>Final Price: ₹{game.currentPrice}</p>
+            </div>
+          )}
 
-          <input
-            placeholder="Message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            style={{ flex: 2 }}
-          />
-
-          <button
-            onClick={handleSend}
-            disabled={!offer || !message}
-          >
-            Send
+          <button className="btn-primary" style={{marginTop: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'}} onClick={() => (window.location.href = "/leaderboard")}>
+            <Trophy size={18} /> View Leaderboard
           </button>
         </div>
-      )}
-
-
-      {/* Game Over */}
-      {game.status !== "ongoing" && (
-        <h3 style={{ marginTop: "20px" }}>
-          Game Over 🎯
-        </h3>
-      )}
-
-      <button onClick={() => (window.location.href = "/leaderboard")}>
-        View Leaderboard
-        </button>
+      </div>
     </div>
   );
 }
