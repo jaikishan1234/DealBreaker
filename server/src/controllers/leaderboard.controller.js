@@ -1,12 +1,9 @@
 import Score from "../models/score.model.js";
 
-
-
 // OPTIONAL: Manual save (for testing only, not needed in production)
 export const saveScore = async (req, res) => {
   try {
     const { game } = req.body;
-
 
     // Validate input
     if (!game || !game.initialPrice || !game.currentPrice) {
@@ -16,32 +13,29 @@ export const saveScore = async (req, res) => {
       });
     }
 
-
     // Calculate score
     const score =
       (game.initialPrice - game.currentPrice) /
       game.initialPrice;
 
-
-    // Remove previous scores of this user (keeps leaderboard clean)
-    await Score.deleteMany({ user: req.user._id });
-
-
-    const newScore = await Score.create({
-      user: req.user._id,
-      username: req.user.username,
-      finalPrice: game.currentPrice,
-      initialPrice: game.initialPrice,
-      score,
-    });
-
+    // Upsert score (update if exists, create if not)
+    const newScore = await Score.findOneAndUpdate(
+      { user: req.user._id },
+      {
+        user: req.user._id,
+        username: req.user.username,
+        finalPrice: game.currentPrice,
+        initialPrice: game.initialPrice,
+        score,
+      },
+      { upsert: true, new: true }
+    );
 
     return res.status(201).json({
       success: true,
       message: "Score saved successfully",
       data: newScore,
     });
-
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -50,14 +44,11 @@ export const saveScore = async (req, res) => {
   }
 };
 
-
-
 // Get leaderboard with ranking + formatted score
 export const getLeaderboard = async (req, res) => {
   try {
     // Get all scores sorted by best performance
     const leaderboard = await Score.find().sort({ score: -1 });
-
 
     // Add rank and format score for better readability
     const formattedLeaderboard = leaderboard.map((item, index) => ({
@@ -73,13 +64,11 @@ export const getLeaderboard = async (req, res) => {
       createdAt: item.createdAt,
     }));
 
-
     return res.status(200).json({
       success: true,
       message: "Leaderboard fetched successfully",
       data: formattedLeaderboard,
     });
-
   } catch (error) {
     return res.status(500).json({
       success: false,
